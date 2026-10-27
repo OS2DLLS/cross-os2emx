@@ -7,10 +7,33 @@ TARC := tar cvzf
 TARX := tar xvzf
 TARBALL := $(PACKAGE)-$(VERSION).tar.gz
 
-# Directory where cross-os2emx will be installed.
-# That is, $PREFIXROOT/opt/os2emx.
-PREFIXROOT := $(HOME)
-PREFIX := $(patsubst %/,%,$(PREFIXROOT))/opt/os2emx
+# Prefer the system Linux host compilers over Nix wrapper compilers. The latter
+# can place glibc headers before libstdc++ and break <cstdlib>'s include_next.
+HOST_SYSTEM_PATH ?= /usr/bin:/bin
+export PATH := $(HOST_SYSTEM_PATH):$(PATH)
+
+# Binutils links host ar against flex's libfl; system GCC needs this Nix
+# package library path explicitly when host tools come from /usr/bin.
+HOST_FLEX_PATH := $(shell command -v flex 2>/dev/null)
+ifneq ($(strip $(HOST_FLEX_PATH)),)
+HOST_FLEX_LIBDIR ?= $(abspath $(dir $(HOST_FLEX_PATH))/../lib)
+export LIBRARY_PATH := $(HOST_FLEX_LIBDIR)$(if $(strip $(LIBRARY_PATH)),:$(LIBRARY_PATH))
+# The Nix flex library is linked against its own glibc. Keep host tools that
+# load libfl from mixing that libm with the system libc.
+HOST_FLEX_GLIBC_LIBDIR := $(shell ldd $(HOST_FLEX_LIBDIR)/libfl.so.2 2>/dev/null | awk '/libc.so.6 =>/ { print $$3; exit }' | xargs dirname)
+ifneq ($(strip $(HOST_FLEX_GLIBC_LIBDIR)),)
+export LD_LIBRARY_PATH := $(HOST_FLEX_GLIBC_LIBDIR)$(if $(strip $(LD_LIBRARY_PATH)),:$(LD_LIBRARY_PATH))
+endif
+endif
+
+# Set the out-of-tree build root before deriving PREFIX/BINDIR.
+OS2EMX_BUILD_ROOT ?= /data/build-nix
+OS2EMX_CROSS_BUILD_ROOT ?= $(patsubst %/,%,$(OS2EMX_BUILD_ROOT))/cross-os2emx/bare-make
+
+# The default toolchain is self-contained under the out-of-tree build root.
+# Override PREFIX explicitly when an installation outside that tree is wanted.
+PREFIXROOT ?= $(HOME)
+PREFIX ?= $(OS2EMX_CROSS_BUILD_ROOT)/toolchain
 BINDIR := $(PREFIX)/bin
 LIBDIR := $(PREFIX)/lib
 SHAREDIR := $(PREFIX)/share
@@ -24,8 +47,10 @@ TARGETLIBDIR := $(TARGETPREFIX)/lib
 
 SYSNAME := $(shell uname -s)
 
-AR := $(BINDIR)/$(TARGETSPEC)-ar
-ARFLAGS := cru
+# Keep host AR untouched for the Linux-host build tools (Autotools/libtool).
+# The target archiver is named explicitly in the generated cross-toolchain.
+EMX_AR := $(BINDIR)/$(TARGETSPEC)-ar
+EMX_ARFLAGS := cru
 
 MKDIR_P := mkdir -p
 RM := rm -f
@@ -38,9 +63,9 @@ LN_S := ln -s
 MV := mv
 SED := sed
 TOUCH := touch
-PATCH := patch
 
-AUTOTOOLSDIR := autotools
+
+AUTOTOOLSDIR ?= $(OS2EMX_CROSS_BUILD_ROOT)/autotools
 AUTOCONFTGZ := autoconf-2.69.tar.gz
 AUTOCONFTGZURL := https://ftp.gnu.org/gnu/autoconf/$(AUTOCONFTGZ)
 AUTOMAKETGZ := automake-1.18.1.tar.gz
@@ -48,36 +73,48 @@ AUTOMAKETGZURL := https://ftp.gnu.org/gnu/automake/$(AUTOMAKETGZ)
 LIBTOOLTGZ := 2.5.4-os2-r2.tar.gz
 LIBTOOLTGZURL := https://github.com/komh/libtool-os2/archive/refs/tags/$(LIBTOOLTGZ)
 LIBTOOLDIR := $(AUTOTOOLSDIR)/libtool-os2-$(LIBTOOLTGZ:.tar.gz=)
+LIBTOOLBOOTSTRAPBUILDDIR := $(LIBTOOLDIR)/build
+LIBTOOLBUILDDIR := $(LIBTOOLDIR)/build.all-libtool
 
-BINUTILSDIR := binutils-os2-ps
-LIBCDIR := libc
-GCCDIR := gcc-os2-ps
+OS2EMX_SOURCE_ROOT ?= $(abspath ..)
+BINUTILSDIR ?= $(OS2EMX_SOURCE_ROOT)/binutils-os2
+BINUTILSBUILDDIR ?= $(OS2EMX_CROSS_BUILD_ROOT)/binutils
+LIBCDIR ?= $(OS2EMX_SOURCE_ROOT)/libc-os2
+GCCDIR ?= $(OS2EMX_SOURCE_ROOT)/gcc-os2
+GCCBUILDDIR ?= $(OS2EMX_CROSS_BUILD_ROOT)/gcc
+GCCPREREQSDIR ?= $(OS2EMX_CROSS_BUILD_ROOT)/gcc-prerequisites
+GCCPREREQSDRIVERDIR ?= $(OS2EMX_CROSS_BUILD_ROOT)/gcc-prerequisites-driver
+CMAKEBUILDDIR ?= $(OS2EMX_CROSS_BUILD_ROOT)/cmake-build
 EMXDIR := $(LIBCDIR)/src/emx
+EMXOUTDIR ?= $(OS2EMX_CROSS_BUILD_ROOT)/emxtools/$(TARGETSPEC)
 EXTRASDIR := extras
-SETEMXENV := $(EXTRASDIR)/setemxenv
-PKGCONFIG := $(EXTRASDIR)/pkg-config
+EXTRASBUILDDIR ?= $(OS2EMX_CROSS_BUILD_ROOT)/extras
+SETEMXENV := $(EXTRASBUILDDIR)/setemxenv
+SETEMXENV_IN := $(EXTRASDIR)/setemxenv.in
+PKGCONFIG := $(EXTRASBUILDDIR)/pkg-config
+PKGCONFIG_IN := $(EXTRASDIR)/pkg-config.in
 LXLITESRC := $(EXTRASDIR)/$(SYSNAME)/lxLite
-LXLITEDST := $(EXTRASDIR)/$(SYSNAME)/lxlite
+LXLITEDST := $(EXTRASBUILDDIR)/$(SYSNAME)/lxlite
 
-MESONDIR := meson
+MESONDIR ?= $(OS2EMX_CROSS_BUILD_ROOT)/meson
 MESONVER := 1.11.1
 MESONTGZ := meson-$(MESONVER).tar.gz
 MESONTGZXDIR := $(MESONTGZ:.tar.gz=)
 MESONTGZURL := https://github.com/mesonbuild/meson/releases/download/$(MESONVER)/$(MESONTGZ)
 MESONCROSSFILE := $(MESONDIR)/$(TARGETSPEC)
+MESONCROSSFILEIN := $(CURDIR)/meson/$(TARGETSPEC)
 
-CMAKEDIR := cmake-os2
-CMAKECROSSFILE := cmake/$(TARGETSPEC).cmake
+CMAKEDIR ?= $(OS2EMX_SOURCE_ROOT)/cmake-os2
+CMAKECROSSFILE := $(OS2EMX_CROSS_BUILD_ROOT)/cmake-cross/$(TARGETSPEC).cmake
+CMAKECROSSFILEIN := $(CURDIR)/cmake/$(TARGETSPEC).cmake.in
 
 LIBCZIP := libc-0_1_14-1_oc00.zip
 LIBCZIPURL := https://rpm.netlabs.org/release/00/zip/$(LIBCZIP)
-LIBCZIPDIR := libc-$(TARGETSPEC)
-LIBCFENVHDIFF := patches/libc/fenv.h.diff
-
-BUILDDIR := build
+LIBCZIPDIR := $(OS2EMX_CROSS_BUILD_ROOT)/libc-$(TARGETSPEC)
+LIBCFENVH := $(LIBCDIR)/src/emx/include/fenv.h
 
 .PHONY: all
-all:
+all: install
 
 .PHONY: all-autotools
 all: all-autotools
@@ -90,7 +127,7 @@ $(AUTOTOOLSDIR)/autoconf.done: $(AUTOTOOLSDIR)/$(AUTOCONFTGZ)
 	cd $(AUTOTOOLSDIR); \
 	$(TARX) $(AUTOCONFTGZ) || exit 1; \
 	cd $(AUTOCONFTGZ:.tar.gz=); \
-	./configure --prefix=$$(dirname $$PWD) && $(MAKE) && $(MAKE) install
+	./configure --prefix=$(AUTOTOOLSDIR) && $(MAKE) && $(MAKE) install
 	$(TOUCH) $@
 
 $(AUTOTOOLSDIR)/$(AUTOCONFTGZ):
@@ -104,7 +141,7 @@ $(AUTOTOOLSDIR)/automake.done: $(AUTOTOOLSDIR)/$(AUTOMAKETGZ)
 	cd $(AUTOTOOLSDIR); \
 	$(TARX) $(AUTOMAKETGZ) || exit 1; \
 	cd $(AUTOMAKETGZ:.tar.gz=); \
-	./configure --prefix=$$(dirname $$PWD) && $(MAKE) && $(MAKE) install
+	./configure --prefix=$(AUTOTOOLSDIR) && $(MAKE) && $(MAKE) install
 	$(TOUCH) $@
 
 $(AUTOTOOLSDIR)/$(AUTOMAKETGZ):
@@ -118,9 +155,9 @@ $(AUTOTOOLSDIR)/libtool.done: $(AUTOTOOLSDIR)/$(LIBTOOLTGZ)
 	test -f $(LIBTOOLDIR)/configure \
 	  || ( cd $(AUTOTOOLSDIR); $(TARX) $(LIBTOOLTGZ); ) \
 	  || exit 1;
-	$(MKDIR_P) $(LIBTOOLDIR)/$(BUILDDIR)
-	cd $(LIBTOOLDIR)/$(BUILDDIR); \
-	../configure --prefix=$$(dirname $$(realpath ..)) \
+	$(MKDIR_P) $(LIBTOOLBOOTSTRAPBUILDDIR)
+	cd $(LIBTOOLBOOTSTRAPBUILDDIR); \
+	../configure --prefix=$(AUTOTOOLSDIR) \
 	  && $(MAKE) && $(MAKE) install
 	$(TOUCH) $@
 
@@ -131,20 +168,21 @@ $(AUTOTOOLSDIR)/$(LIBTOOLTGZ):
 .PHONY: all-binutils
 all: all-binutils
 all-binutils: all-autotools
-	$(MKDIR_P) $(BINUTILSDIR)/$(BUILDDIR)
-	export PATH=$$PWD/$(AUTOTOOLSDIR)/bin:$$PATH; \
-    cd $(BINUTILSDIR)/$(BUILDDIR); \
+	$(MKDIR_P) $(BINUTILSBUILDDIR)
+	export PATH=$(AUTOTOOLSDIR)/bin:$$PATH; \
+	cd $(BINUTILSBUILDDIR); \
 	test "$(FORCE_CONFIGURE)" = "" -a -f config.status || \
-	  PREFIXROOT=$(PREFIXROOT) ../conf-cross-os2emx || exit 1; \
+	  OS2EMX_PREFIX=$(PREFIX) PREFIXROOT=$(PREFIXROOT) \
+	    $(abspath $(BINUTILSDIR))/conf-cross-os2emx || exit 1; \
 	$(MAKE)
 
 .PHONY: all-libc
 all: all-libc
 all-libc: $(LIBCZIPDIR)/libc.done
-$(LIBCZIPDIR)/libc.done: $(LIBCZIPDIR)/$(LIBCZIP)
+$(LIBCZIPDIR)/libc.done: $(LIBCZIPDIR)/$(LIBCZIP) $(LIBCFENVH)
 	$(UNZIP) $(LIBCZIPDIR)/$(LIBCZIP) -d $(LIBCZIPDIR)
-	fenvhdiff=$$(realpath $(LIBCFENVHDIFF)); \
-	cd $(LIBCZIPDIR); $(PATCH) --binary -p0 -N < $$fenvhdiff
+	$(INSTALL) -d $(LIBCZIPDIR)/@unixroot/usr/include
+	$(CP) $(LIBCFENVH) $(LIBCZIPDIR)/@unixroot/usr/include/fenv.h
 	$(TOUCH) $@
 
 $(LIBCZIPDIR)/$(LIBCZIP):
@@ -154,18 +192,24 @@ $(LIBCZIPDIR)/$(LIBCZIP):
 .PHONY: all-emxtools
 all: all-emxtools
 all-emxtools: all-binutils
-	$(MAKE) -C $(EMXDIR) -f Makefile.cross
+	$(MAKE) -C $(EMXDIR) -f Makefile.cross \
+	  EMXDIR=$(abspath $(EMXDIR)) BINUTILSDIR=$(abspath $(BINUTILSDIR)) \
+	  BINUTILSBUILDDIR=$(abspath $(BINUTILSBUILDDIR)) OUTDIR=$(abspath $(EMXOUTDIR)) \
+	  OS2EMX_BUILD_ROOT=$(OS2EMX_BUILD_ROOT) OS2EMX_PREFIX=$(PREFIX) \
+	  PREFIXROOT=$(PREFIXROOT) PREFIX=$(PREFIX)
 
 .PHONY: all-extras
 all: all-extras
 all-extras: $(SETEMXENV) $(PKGCONFIG)
 
-$(SETEMXENV): $(SETEMXENV).in
+$(SETEMXENV): $(SETEMXENV_IN)
+	$(MKDIR_P) $(@D)
 	$(SED) -e 's,@PREFIX@,$(PREFIX),g' -e 's,@TARGETSPEC@,$(TARGETSPEC),g' \
 	       < $< > $@
 	chmod +x $@
 
-$(PKGCONFIG): $(PKGCONFIG).in
+$(PKGCONFIG): $(PKGCONFIG_IN)
+	$(MKDIR_P) $(@D)
 	$(SED) -e 's,@PREFIX@,$(PREFIX),g' -e 's,@TARGETSPEC@,$(TARGETSPEC),g' \
 	       < $< > $@
 	chmod +x $@
@@ -174,20 +218,36 @@ ifeq ($(SYSNAME),Linux)
 all-extras: $(LXLITEDST)
 
 $(LXLITEDST): $(LXLITESRC)
-	$(LN_S) -f $(notdir $(LXLITESRC)) $(LXLITEDST)
+	$(MKDIR_P) $(@D)
+	$(CP) -a $< $@
 endif
 
 .PHONY: all-gcc
 all: all-gcc
 all-gcc: all-autotools install-binutils install-libc install-emxtools \
          install-extras
-	$(MKDIR_P) $(GCCDIR)/$(BUILDDIR)
-	export PATH=$$PWD/$(AUTOTOOLSDIR)/bin:$$PATH; \
-	cd $(GCCDIR); \
-	contrib/download_prerequisites || exit 1; \
-	cd $(BUILDDIR); \
-	test "$(FORCE_CONFIGURE)" = "" -a -f config.status || \
-	  PREFIXROOT=$(PREFIXROOT) ../conf-cross-os2emx || exit 1; \
+	$(MKDIR_P) $(GCCBUILDDIR) $(GCCPREREQSDIR) \
+	  $(GCCPREREQSDRIVERDIR)/gcc $(GCCPREREQSDRIVERDIR)/contrib
+	export PATH=$(AUTOTOOLSDIR)/bin:$$PATH; \
+	$(RM) $(GCCPREREQSDRIVERDIR)/gcc/BASE-VER \
+	  $(GCCPREREQSDRIVERDIR)/contrib/prerequisites.sha512; \
+	$(LN_S) $(abspath $(GCCDIR))/gcc/BASE-VER \
+	  $(GCCPREREQSDRIVERDIR)/gcc/BASE-VER || exit 1; \
+	$(LN_S) $(abspath $(GCCDIR))/contrib/prerequisites.sha512 \
+	  $(GCCPREREQSDRIVERDIR)/contrib/prerequisites.sha512 || exit 1; \
+	cd $(GCCPREREQSDRIVERDIR); \
+	$(abspath $(GCCDIR))/contrib/download_prerequisites \
+	  --directory=$(abspath $(GCCPREREQSDIR)) || exit 1; \
+	cd $(GCCBUILDDIR); \
+	if test "$(FORCE_CONFIGURE)$(FORCE_GCC_CONFIGURE)" != ""; then $(RM) config.cache */config.cache */*/config.cache */*/*/config.cache; fi; \
+	test "$(FORCE_CONFIGURE)$(FORCE_GCC_CONFIGURE)" = "" -a -f config.status || \
+	  OS2EMX_PREFIX=$(PREFIX) PREFIXROOT=$(PREFIXROOT) \
+	    GCC_PREREQS_DIR=$(abspath $(GCCPREREQSDIR)) \
+	    ac_cv_have_decl_basename_const_charp_=yes \
+	    ac_cv_have_decl_strstr_const_charp_const_charp_=yes \
+	    gcc_cv_have_decl_sbrk=yes \
+	    gcc_cv_have_decl_strsignal=yes \
+	    $(abspath $(GCCDIR))/conf-cross-os2emx || exit 1; \
 	export PATH=$(DESTDIR)$(BINDIR):$$PATH; \
 	$(MAKE) all-gcc all-target-libgcc all-target-libstdc++-v3 all-target-libssp
 
@@ -196,11 +256,13 @@ all: all-meson
 all-meson: $(MESONCROSSFILE)-aout.txt $(MESONCROSSFILE)-omf.txt \
            $(MESONDIR)/meson.done
 
-$(MESONCROSSFILE)-aout.txt: $(MESONCROSSFILE)-aout.txt.in
+$(MESONCROSSFILE)-aout.txt: $(MESONCROSSFILEIN)-aout.txt.in
+	$(MKDIR_P) $(@D)
 	$(SED) -e 's,@PREFIX@,$(PREFIX),g' -e 's,@TARGETSPEC@,$(TARGETSPEC),g' \
 	       -e 's,@TARGETCPU@,$(TARGETCPU),g' < $< > $@
 
-$(MESONCROSSFILE)-omf.txt: $(MESONCROSSFILE)-omf.txt.in
+$(MESONCROSSFILE)-omf.txt: $(MESONCROSSFILEIN)-omf.txt.in
+	$(MKDIR_P) $(@D)
 	$(SED) -e 's,@PREFIX@,$(PREFIX),g' -e 's,@TARGETSPEC@,$(TARGETSPEC),g' \
 	       -e 's,@TARGETCPU@,$(TARGETCPU),g' < $< > $@
 
@@ -215,14 +277,15 @@ $(MESONDIR)/$(MESONTGZ):
 .PHONY: all-cmake
 all: all-cmake
 all-cmake: $(CMAKECROSSFILE)
-	$(MKDIR_P) $(CMAKEDIR)/$(BUILDDIR)
-	cd $(CMAKEDIR)/$(BUILDDIR); \
+	$(MKDIR_P) $(CMAKEBUILDDIR)
+	cd $(CMAKEBUILDDIR); \
 	test -f Makefile || \
-	  ../configure --prefix=$(PREFIX) || exit 1;
+	  $(abspath $(CMAKEDIR))/configure --prefix=$(PREFIX) || exit 1;
 	export PATH=$(DESTDIR)$(BINDIR):$(PATH); \
-	$(MAKE) -C $(CMAKEDIR)/$(BUILDDIR)
+	$(MAKE) -C $(CMAKEBUILDDIR)
 
-$(CMAKECROSSFILE): $(CMAKECROSSFILE).in
+$(CMAKECROSSFILE): $(CMAKECROSSFILEIN)
+	$(MKDIR_P) $(@D)
 	$(SED) -e 's,@PREFIX@,$(PREFIX),g' -e 's,@TARGETSPEC@,$(TARGETSPEC),g' \
 	       -e 's,@TARGETCPU@,$(TARGETCPU),g' < $< > $@
 
@@ -233,8 +296,8 @@ $(AUTOTOOLSDIR)/all-libtool.done: $(AUTOTOOLSDIR)/$(LIBTOOLTGZ)
 	test -f $(LIBTOOLDIR)/configure \
 	  || ( cd $(AUTOTOOLSDIR); $(TARX) $(LIBTOOLTGZ); ) \
 	  || exit 1;
-	$(MKDIR_P) $(LIBTOOLDIR)/$(BUILDDIR).all-libtool
-	cd $(LIBTOOLDIR)/$(BUILDDIR).all-libtool; \
+	$(MKDIR_P) $(LIBTOOLBUILDDIR)
+	cd $(LIBTOOLBUILDDIR); \
 	../configure --prefix=$(PREFIX) --disable-ltdl-install \
 	  && $(MAKE)
 	$(TOUCH) $@
@@ -245,7 +308,7 @@ install:
 .PHONY: install-binutils
 install: install-binutils
 install-binutils: all-binutils
-	$(MAKE) -C $(BINUTILSDIR)/$(BUILDDIR) install DESTDIR=$(DESTDIR)
+	$(MAKE) -C $(BINUTILSBUILDDIR) install DESTDIR=$(DESTDIR)
 
 .PHONY: install-libc
 install: install-libc
@@ -265,7 +328,10 @@ install-libc: all-libc
 install: install-emxtools
 install-emxtools: all-emxtools
 	$(MAKE) -C $(EMXDIR) -f Makefile.cross install \
-	  DESTDIR=$(DESTDIR) PREFIXROOT=$(PREFIXROOT)
+	  EMXDIR=$(abspath $(EMXDIR)) BINUTILSDIR=$(abspath $(BINUTILSDIR)) \
+	  BINUTILSBUILDDIR=$(abspath $(BINUTILSBUILDDIR)) OUTDIR=$(abspath $(EMXOUTDIR)) \
+	  OS2EMX_BUILD_ROOT=$(OS2EMX_BUILD_ROOT) OS2EMX_PREFIX=$(PREFIX) \
+	  PREFIXROOT=$(PREFIXROOT) PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)
 
 .PHONY: install-extras
 install: install-extras
@@ -286,12 +352,26 @@ install-extras: all-extras
 	    $(LN_S) -f ../$(TARGETSPEC)/bin/$$n \
 	               $(DESTDIR)$(BINDIR)/$(TARGETSPEC)-$$n; \
 	  fi; \
+	done; \
+	for f in "$(SETEMXENV)" "$(PKGCONFIG)" "$(LXLITEDST)"; do \
+	  test -f $$f || continue; \
+	  n=$$(basename $$f); \
+	  if test -L $$f || test ! -x $$f; then \
+	    $(CP) -a $$f $(DESTDIR)$(TARGETBINDIR)/$$n; \
+	  else \
+	    $(INSTALL) $$f $(DESTDIR)$(TARGETBINDIR)/$$n; \
+	  fi; \
+	  if test -x $$f; then \
+	    $(LN_S) -f ../$(TARGETSPEC)/bin/$$n $(DESTDIR)$(BINDIR); \
+	    $(LN_S) -f ../$(TARGETSPEC)/bin/$$n \
+	               $(DESTDIR)$(BINDIR)/$(TARGETSPEC)-$$n; \
+	  fi; \
 	done
 
 .PHONY: install-gcc
 install: install-gcc
 install-gcc: all-gcc
-	$(MAKE) -C $(GCCDIR)/$(BUILDDIR) DESTDIR=$(DESTDIR) \
+	$(MAKE) -C $(GCCBUILDDIR) DESTDIR=$(DESTDIR) \
 	           install-gcc install-target-libgcc install-target-libstdc++-v3 \
 	           install-target-libssp
 
@@ -311,12 +391,26 @@ install: install-cmake
 install-cmake: all-cmake
 	$(INSTALLDATA) -D $(CMAKECROSSFILE) \
 	  $(DESTDIR)$(SHAREDIR)/cmake/cross/$(notdir $(CMAKECROSSFILE))
-	$(MAKE) -C $(CMAKEDIR)/$(BUILDDIR) install DESTDIR=$(DESTDIR)
+	$(MAKE) -C $(CMAKEBUILDDIR) install DESTDIR=$(DESTDIR)
+	@if test -n "$(HOST_FLEX_GLIBC_LIBDIR)"; then \
+	  set -eu; \
+	  bindir="$(DESTDIR)$(BINDIR)"; \
+	  mv -f "$$bindir/cmake" "$$bindir/cmake.real"; \
+	  { printf '%s\n' \
+	      '#!/bin/sh' \
+	      'export LD_LIBRARY_PATH="$(HOST_FLEX_GLIBC_LIBDIR)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}"' \
+	      'case "$$0" in */*) _cmake_path="$$0" ;; *) _cmake_path=$$(command -v "$$0") ;; esac' \
+	      '_cmake_dir=$$(CDPATH= cd "$$(dirname "$$_cmake_path")" && pwd)' \
+	      'exec "$$_cmake_dir/cmake.real" "$$@"'; \
+	  } > "$$bindir/cmake.tmp"; \
+	  chmod +x "$$bindir/cmake.tmp"; \
+	  mv -f "$$bindir/cmake.tmp" "$$bindir/cmake"; \
+	fi
 
 .PHONY: install-libtool
 install: install-libtool
 install-libtool: all-libtool
-	$(MAKE) -C $(LIBTOOLDIR)/$(BUILDDIR).all-libtool install DESTDIR=$(DESTDIR)
+	$(MAKE) -C $(LIBTOOLBUILDDIR) install DESTDIR=$(DESTDIR)
 
 .PHONY: test
 test: install
@@ -357,7 +451,7 @@ clean-autotools:
 .PHONY: clean-binutils
 clean: clean-binutils
 clean-binutils:
-	$(RM) -r $(BINUTILSDIR)/$(BUILDDIR)
+	$(RM) -r $(BINUTILSBUILDDIR)
 
 .PHONY: clean-libc
 clean: clean-libc
@@ -367,17 +461,21 @@ clean-libc:
 .PHONY: clean-emxtools
 clean: clean-emxtools
 clean-emxtools:
-	$(MAKE) -C $(EMXDIR) -f Makefile.cross clean
+	$(MAKE) -C $(EMXDIR) -f Makefile.cross clean \
+	  EMXDIR=$(abspath $(EMXDIR)) BINUTILSDIR=$(abspath $(BINUTILSDIR)) \
+	  BINUTILSBUILDDIR=$(abspath $(BINUTILSBUILDDIR)) OUTDIR=$(abspath $(EMXOUTDIR)) \
+	  OS2EMX_BUILD_ROOT=$(OS2EMX_BUILD_ROOT) OS2EMX_PREFIX=$(PREFIX) \
+	  PREFIXROOT=$(PREFIXROOT) PREFIX=$(PREFIX)
 
 .PHONY: clean-extras
 clean: clean-extras
 clean-extras:
-	$(RM) $(SETEMXENV) $(PKGCONFIG)
+	$(RM) $(SETEMXENV) $(PKGCONFIG) $(LXLITEDST)
 
 .PHONY: clean-gcc
 clean: clean-gcc
 clean-gcc:
-	$(RM) -r $(GCCDIR)/$(BUILDDIR)
+	$(RM) -r $(GCCBUILDDIR) $(GCCPREREQSDIR) $(GCCPREREQSDRIVERDIR)
 
 .PHONY: clean-meson
 clean: clean-meson
@@ -391,12 +489,12 @@ clean-meson:
 clean: clean-cmake
 clean-cmake:
 	$(RM) $(CMAKECROSSFILE)
-	$(RM) -r $(CMAKEDIR)/$(BUILDDIR)
+	$(RM) -r $(CMAKEBUILDDIR)
 
 .PHONY: clean-libtool
 clean: clean-libtool
 clean-libtool:
-	$(RM) -r $(LIBTOOLDIR)/build.all-libtool
+	$(RM) -r $(LIBTOOLBUILDDIR)
 	$(RM) $(AUTOTOOLSDIR)/all-libtool.done
 
 .PHONY: clean-test

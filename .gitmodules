@@ -1,24 +1,18 @@
 [submodule "libc"]
 	path = libc
-	url = https://github.com/bitwiseworks/libc.git
+	url = https://github.com/OS2DLLS/libc-os2.git
 	branch = master
 [submodule "cmake-os2"]
 	path = cmake-os2
-	url = https://github.com/bitwiseworks/cmake-os2.git
+	url = https://github.com/OS2DLLS/cmake-os2.git
 	branch = master
-[submodule "binutils-os2-bww"]
-	path = binutils-os2-bww
-	url = https://github.com/bitwiseworks/binutils-os2.git
-[submodule "gcc-os2-bww"]
-	path = gcc-os2-bww
-	url = https://github.com/bitwiseworks/gcc-os2.git
-[submodule "binutils-os2-ps"]
-	path = binutils-os2-ps
-	url = https://github.com/psmedley/binutils-os2.git
-	branch = 2.44
+[submodule "binutils-os2"]
+	path = binutils-os2
+	url = https://github.com/OS2DLLS/binutils-os2.git
+	branch = master
 	shallow = true
-[submodule "gcc-os2-ps"]
-	path = gcc-os2-ps
-	url = https://github.com/psmedley/gcc-os2.git
-	branch = gcc-15.x
+[submodule "gcc-os2"]
+	path = gcc-os2
+	url = https://github.com/OS2DLLS/gcc-os2.git
+	branch = master
 	shallow = true

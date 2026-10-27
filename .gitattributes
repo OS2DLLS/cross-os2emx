@@ -2,5 +2,6 @@
 * text=auto !eol
 
 /patches/libc/* -text
-/patches/gcc-os2-ps/* -text
+/patches/gcc-os2/* -text
+/patches/gcc-os2-gcc15/* -text
 /patches/lxlite/* -text

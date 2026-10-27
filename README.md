@@ -4,11 +4,11 @@ This is a cross compilation toolchain for `i686-pc-os2-emx` target.
 
 This consists of `binutils`, `gcc`, `LIBCn`, `meson`, `CMake`, `libtool`, and some build tools.
 
-* `binutils` is v2.44 from https://github.com/psmedley/binutils-os2
-* `gcc` is v15.2.0 from https://github.com/psmedley/gcc-os2
-* `LIBCn` is v0.1.14 from https://github.com/bitwiseworks/libc
+* `binutils` is v2.33.1 from https://github.com/OS2DLLS/binutils-os2
+* `gcc` is v9.2.0 from https://github.com/OS2DLLS/gcc-os2
+* `LIBCn` is v0.1.15 from https://github.com/OS2DLLS/libc-os2
 * `meson` is v1.11.1 from https://github.com/mesonbuild/meson
-* `CMake` is v3.31.7 from https://github.com/bitwiseworks/cmake-os2
+* `CMake` is v3.31.7 from https://github.com/OS2DLLS/cmake-os2
 * `libtool` is v2.5.4 from https://github.com/komh/libtool-os2
 
 Tested hosts:
@@ -216,30 +216,51 @@ If the matched packages are many, only the latest version is installed out of th
 
 3. The zip file should have /lib, /include directory.
 
-# How to build
+# Build the complete toolchain
 
-1. Clone the sources from github:
-    `git clone https://github.com/komh/cross-os2emx.git`
+From this repository's root, run:
 
-2. Bootstrap:
-    `./bootstrap`
+```sh
+make
+```
 
-3. Build:
-    `make MAKEINFO=true`
+The default build root is `/data/build-nix/cross-os2emx/bare-make`. The
+cross-compiled toolchain is built and installed into its `toolchain/` child;
+the command does not install into or overwrite `/data/os2emx`. All generated
+build directories and downloads remain beneath the build root. Use
+`OS2EMX_BUILD_ROOT`, `OS2EMX_CROSS_BUILD_ROOT`, `OS2EMX_SOURCE_ROOT`, or
+`PREFIX` to override the defaults. The Linux host build dependencies must be
+available on `PATH`.
 
-4. Install:
-    `make install MAKEINFO=true`
+The source repositories are expected under `OS2EMX_SOURCE_ROOT` (default: the
+parent directory of this checkout):
 
-    This will install the built files into `$HOME/opt/os2emx`.
+| Makefile component | Required checkout |
+| --- | --- |
+| `BINUTILSDIR` | `binutils-os2` |
+| `GCCDIR` | `gcc-os2` |
+| `CMAKEDIR` | `cmake-os2` |
+| `LIBCDIR` | `libc-os2` |
+
+The source worktrees contain the OS/2 cross-build changes; the submodule
+checkouts in this repository are upstream reference revisions. Override the
+source root when those worktrees are elsewhere, for example:
+
+```sh
+export OS2EMX_SOURCE_ROOT=/path/to/source-repositories
+```
+
+Do not use `make -n` as a safe dry run: GNU Make may execute recipe lines
+containing recursive `$(MAKE)` even in print-only mode.
 
 ## Linux host: building OS/2 DLL projects with CMake
 
-After `make install`, the complete cross toolchain is available below
-`$HOME/opt/os2emx` (or below the prefix selected with `PREFIXROOT`).  The
-installed CMake cross file is:
+After `make` completes, the default toolchain prefix is
+`/data/build-nix/cross-os2emx/bare-make/toolchain`. The installed CMake cross
+file is:
 
 ```text
-$HOME/opt/os2emx/share/cmake/cross/i686-pc-os2-emx.cmake
+/data/build-nix/cross-os2emx/bare-make/toolchain/share/cmake/cross/i686-pc-os2-emx.cmake
 ```
 
 It selects the `i686-pc-os2-emx` compiler, the target sysroot, the OMF
@@ -247,9 +268,11 @@ archiver, and the OS/2 OMF linker flags.  A project can therefore be built
 from Linux with the normal CMake/Make workflow:
 
 ```sh
-cmake -S . -B build-os2 \
-  -DCMAKE_TOOLCHAIN_FILE="$HOME/opt/os2emx/share/cmake/cross/i686-pc-os2-emx.cmake"
-make -C build-os2 -j2
+TOOLCHAIN_PREFIX=/data/build-nix/cross-os2emx/bare-make/toolchain
+BUILD_DIR=/data/build-nix/$(basename "$PWD")-os2
+cmake -S . -B "$BUILD_DIR" \
+  -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_PREFIX/share/cmake/cross/i686-pc-os2-emx.cmake"
+cmake --build "$BUILD_DIR" -j2
 ```
 
 The resulting executables and DLLs are OS/2 binaries.  Do not use the host
@@ -259,14 +282,8 @@ their headers and OMF libraries below the toolchain sysroot.
 
 * **NOTE 1**: Some tools and libs such as `gettext`, `autopoint`, `textinfo`, `flex`, `bison`, and so on are required by `binutils` and `gcc`.
 * **NOTE 2**: `libssl` and `libcrypto` of `openssl` are required by `CMake`.
-* **NOTE 3**: `wget`, `tar`, and `unzip` are required to download and to extract `autotools` and `LIBCn` binaries.
-* **NOTE 4**: Unless you set `PREFIXROOT`, `PREFIXROOT` is set to `$HOME` by default. If you want to set PREFIXROOT to other directory than **$HOME**. then you should set **PREFIXROOT** to the same value **WHENEVER** calling **make**. For example,
-
-```
-    make PREFIXROOT=/
-    make install PREFIXROOT=/
-```
-This will install into `$PREFIXROOT/opt/os2emx`.
+* **NOTE 3**: `git`, `wget`, `tar`, `gzip`, and `unzip` are used by the bootstrap and download/extraction rules; `../shell.nix` provides them.
+* **NOTE 4**: The direct `make` default installs into the isolated prefix under `/data/build-nix`; set `PREFIX=/your/path` to choose a different installation prefix.
 
 # Known problems
 
