@@ -283,7 +283,7 @@ for d in "$rpmdir/@unixroot/usr"/* ; do
 done
 
 echo "Postprocessing for the RPM(s)..."
-postrpm "$targetprefix"
+"$mydir/postrpm" "$targetprefix"
 
 echo "Cleaning up..."
 $RM -r "$rpmdir"

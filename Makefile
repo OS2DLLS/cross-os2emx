@@ -326,12 +326,27 @@ install-libc: all-libc
 
 .PHONY: install-pthread-devel
 install: install-pthread-devel
-install-pthread-devel: install-libc install-extras
-	@if test ! -f "$(DESTDIR)$(TARGETLIBDIR)/pthread_s.a"; then \
-	  cd "$(OS2EMX_CROSS_BUILD_ROOT)" && \
-	  "$(DESTDIR)$(TARGETBINDIR)/installrpm" pthread-devel-0 \
-	    -d "$(DESTDIR)$(TARGETPREFIX)"; \
-	fi
+install-pthread-devel: install-extras
+	@set -eu; \
+	  libdir="$(DESTDIR)$(TARGETLIBDIR)"; \
+	  incdir="$(DESTDIR)$(TARGETINCDIR)"; \
+	  bindir="$(DESTDIR)$(TARGETBINDIR)"; \
+	  if test ! -s "$$libdir/pthread_s.a" || \
+	     test ! -s "$$incdir/pthread.h" || \
+	     test ! -s "$$libdir/pthr01.dll"; then \
+	    cd "$(OS2EMX_CROSS_BUILD_ROOT)"; \
+	    "$$bindir/installrpm" pthread pthread-devel \
+	      -d "$(DESTDIR)$(TARGETPREFIX)"; \
+	  fi; \
+	  test -s "$$libdir/pthr01.dll"; \
+	  test -x "$$bindir/emximp"; \
+	  test -x "$$bindir/emxomfar"; \
+	  tmp="$$libdir/.pthreads_s.tmp.lib"; \
+	  trap 'rm -f "$$tmp"' EXIT HUP INT TERM; \
+	  "$$bindir/emximp" -p128 -o "$$tmp" "$$libdir/pthr01.dll"; \
+	  "$$bindir/emxomfar" t "$$tmp" >/dev/null; \
+	  mv -f "$$tmp" "$$libdir/pthreads_s.a"; \
+	  "$$bindir/emxomfar" t "$$libdir/pthreads_s.a" >/dev/null
 
 .PHONY: install-emxtools
 install: install-emxtools
