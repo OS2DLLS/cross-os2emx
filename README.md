@@ -204,17 +204,4 @@ their usage output for optional destination and repository flags. Check that
 any added library is target-compatible and provides OMF archives when needed;
 host libraries cannot be used for OS/2 links.
 
-## Verification boundary
 
-A successful Linux cross-build or a `file` identification of an OMF/LX
-artifact confirms build/link format, not execution on OS/2. Test the resulting
-programs and DLLs on a real OS/2 system or a suitable emulator before claiming
-runtime compatibility.
-
-## Upstream and support
-
-Upstream repository: <https://github.com/komh/cross-os2emx>
-
-Report issues at <https://github.com/komh/cross-os2emx/issues>.
-
-Author: KO Myung-Hun
