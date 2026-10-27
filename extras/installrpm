@@ -139,7 +139,7 @@ targetprefix="${destdir:-$prefix/$target}"
 : ${XZ:=xz}
 : ${ZSTD:=zstd}
 : ${CAT:=cat}
-: ${CPIO:=cpio -v}
+: ${CPIO:=}
 : ${CP:=cp -v}
 : ${RM:=rm -f}
 
@@ -263,7 +263,16 @@ printlist $rpms
 saveddir="$PWD"
 cd "$rpmdir"
 for r in $rpms; do
-  rpm2cpio "$r" | $CPIO -idm
+  if [ -n "$CPIO" ]; then
+    rpm2cpio "$r" | $CPIO -idm
+  elif command -v cpio > /dev/null 2>&1; then
+    rpm2cpio "$r" | cpio -idm
+  elif command -v bsdtar > /dev/null 2>&1; then
+    rpm2cpio "$r" | bsdtar -xf -
+  else
+    echo "Neither cpio nor bsdtar is available to extract RPM payloads" >&2
+    exit 1
+  fi
 done
 cd "$saveddir"
 

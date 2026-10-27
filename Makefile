@@ -33,7 +33,7 @@ OS2EMX_CROSS_BUILD_ROOT ?= $(patsubst %/,%,$(OS2EMX_BUILD_ROOT))/cross-os2emx
 # The default toolchain is self-contained under the out-of-tree build root.
 # Override PREFIX explicitly when an installation outside that tree is wanted.
 PREFIXROOT ?= $(HOME)
-PREFIX ?= $(OS2EMX_CROSS_BUILD_ROOT)/toolchain
+PREFIX ?= /data/os2emx
 BINDIR := $(PREFIX)/bin
 LIBDIR := $(PREFIX)/lib
 SHAREDIR := $(PREFIX)/share
@@ -323,6 +323,15 @@ install-libc: all-libc
 	$(LN_S) ../include $(DESTDIR)$(TARGETPREFIX)/usr/include
 	$(RM) $(DESTDIR)$(TARGETPREFIX)/usr/lib
 	$(LN_S) ../lib $(DESTDIR)$(TARGETPREFIX)/usr/lib
+
+.PHONY: install-pthread-devel
+install: install-pthread-devel
+install-pthread-devel: install-libc install-extras
+	@if test ! -f "$(DESTDIR)$(TARGETLIBDIR)/pthread_s.a"; then \
+	  cd "$(OS2EMX_CROSS_BUILD_ROOT)" && \
+	  "$(DESTDIR)$(TARGETBINDIR)/installrpm" pthread-devel-0 \
+	    -d "$(DESTDIR)$(TARGETPREFIX)"; \
+	fi
 
 .PHONY: install-emxtools
 install: install-emxtools

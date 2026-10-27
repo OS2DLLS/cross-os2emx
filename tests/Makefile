@@ -4,6 +4,7 @@ PREFIXROOT := $(HOME)
 PREFIX := $(PREFIXROOT)/opt/os2emx
 TARGET := i686-pc-os2-emx
 TARGETINCDIR := $(PREFIX)/$(TARGET)/include
+TARGETLIBDIR := $(PREFIX)/$(TARGET)/lib
 
 export PATH := $(PREFIX)/bin:$(PATH)
 
@@ -63,6 +64,7 @@ test-autotools:
 
 install-lib:
 	if test ! -f $(TARGETINCDIR)/pthread.h \
+	   || test ! -f $(TARGETLIBDIR)/pthread_s.a \
 	   || test ! -f $(TARGETINCDIR)/os2tk45/os2.h \
 	   || test ! -f $(TARGETINCDIR)/kai.h ; then \
 	  ./installlib.sh; \

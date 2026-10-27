@@ -31,7 +31,7 @@ From the repository root, the default command is:
 
 ```sh
 cd /data/cross-os2emx
-make
+make PREFIX=/data/os2emx
 ```
 
 The current Makefile defaults to these paths:
