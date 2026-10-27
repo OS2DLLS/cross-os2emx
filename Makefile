@@ -28,7 +28,7 @@ endif
 
 # Set the out-of-tree build root before deriving PREFIX/BINDIR.
 OS2EMX_BUILD_ROOT ?= /data/build-nix
-OS2EMX_CROSS_BUILD_ROOT ?= $(patsubst %/,%,$(OS2EMX_BUILD_ROOT))/cross-os2emx/bare-make
+OS2EMX_CROSS_BUILD_ROOT ?= $(patsubst %/,%,$(OS2EMX_BUILD_ROOT))/cross-os2emx
 
 # The default toolchain is self-contained under the out-of-tree build root.
 # Override PREFIX explicitly when an installation outside that tree is wanted.
