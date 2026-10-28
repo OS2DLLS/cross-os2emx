@@ -2,7 +2,7 @@
 # CMake consumes CMAKE_TOOLCHAIN_FILE from the environment on a fresh configure.
 # Project-specific toolchains (QtBase and Qt consumers) may override it.
 
-foreach(_required OS2EMX_PREFIX OS2EMX_SYSROOT OS2EMX_CC OS2EMX_CXX OS2EMX_AR)
+foreach(_required OS2EMX_PREFIX OS2EMX_SYSROOT OS2EMX_CC OS2EMX_CXX OS2EMX_AR OS2EMX_RANLIB)
   if(NOT DEFINED ENV{${_required}} OR "$ENV{${_required}}" STREQUAL "")
     message(FATAL_ERROR "${_required} must be set by /data/shell.nix")
   endif()
@@ -18,9 +18,8 @@ endif()
 if(NOT DEFINED CMAKE_CXX_COMPILER OR CMAKE_CXX_COMPILER STREQUAL "")
   set(CMAKE_CXX_COMPILER "$ENV{OS2EMX_CXX}" CACHE FILEPATH "OS/2 target C++ compiler")
 endif()
-if(NOT DEFINED CMAKE_AR OR CMAKE_AR STREQUAL "")
-  set(CMAKE_AR "$ENV{OS2EMX_AR}" CACHE FILEPATH "Host OMF archiver")
-endif()
+set(CMAKE_AR "$ENV{OS2EMX_AR}" CACHE FILEPATH "Host OMF archiver" FORCE)
+set(CMAKE_RANLIB "$ENV{OS2EMX_RANLIB}" CACHE STRING "No-op ranlib for OMF archives" FORCE)
 if(NOT DEFINED CMAKE_SYSROOT OR CMAKE_SYSROOT STREQUAL "")
   set(CMAKE_SYSROOT "$ENV{OS2EMX_SYSROOT}" CACHE PATH "OS/2 target sysroot")
 endif()
