@@ -108,6 +108,18 @@ Use a separate build directory under the approved build root, not inside the
 source checkout. The generated cross files configure the target compiler,
 sysroot, and OMF-related tools and flags.
 
+For the `/data` workspace, `shell.nix` provides a workspace-wide CMake default
+using the source-controlled toolchain file
+`/data/cross-os2emx/cmake/os2emx-default.cmake`. It reads the compiler,
+sysroot, and OMF archiver from the generic `OS2EMX_*` environment. The file is
+kept with this source checkout; `/data/build-nix` is only for generated build
+trees and logs. A fresh CMake configure in the default target shell consumes
+`CMAKE_TOOLCHAIN_FILE` automatically and uses Ninja. Use
+`OS2EMX_BUILD_MODE=host` when configuring or building Linux host tools so the
+cross compiler defaults are removed. Existing CMake caches retain their
+original toolchain and generator; use a fresh build directory when switching
+between host and target configurations.
+
 ### CMake
 
 The installed CMake toolchain file is:
